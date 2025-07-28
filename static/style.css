@@ -45,10 +45,11 @@ header p {
 }
 
 .converter-box {
-    background: white;
+    background: linear-gradient(145deg, #2a2a2a, #333333);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 15px;
     padding: 30px;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.4);
     margin-bottom: 30px;
 }
 
@@ -63,15 +64,22 @@ header p {
     flex: 1;
     min-width: 300px;
     padding: 15px 20px;
-    border: 2px solid #e1e5e9;
+    background: rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(255, 255, 255, 0.15);
     border-radius: 10px;
     font-size: 16px;
+    color: white;
     transition: border-color 0.3s ease;
 }
 
 #youtube-url:focus {
     outline: none;
     border-color: #ff6b9d;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+#youtube-url::placeholder {
+    color: rgba(255, 255, 255, 0.6);
 }
 
 #convert-btn {
@@ -163,14 +171,15 @@ header p {
 }
 
 .info-section {
-    background: rgba(255,255,255,0.95);
+    background: linear-gradient(145deg, #252525, #2f2f2f);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 15px;
     padding: 25px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
 }
 
 .info-section h3 {
-    color: #374151;
+    color: #e5e5e5;
     margin-bottom: 15px;
     font-size: 1.3rem;
 }
@@ -182,7 +191,7 @@ header p {
 
 .info-section li {
     margin-bottom: 8px;
-    color: #4b5563;
+    color: #c1c1c1;
     line-height: 1.5;
 }
 
