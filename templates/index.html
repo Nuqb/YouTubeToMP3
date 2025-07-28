@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>YouTube to MP3 Converter</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 YouTube to MP3 Converter</h1>
+            <p>As simple as it gets</p>
+        </header>
+
+        <main>
+            <div class="converter-box">
+                <div class="input-section">
+                    <input type="url" id="youtube-url" placeholder="Paste YouTube URL here..." required>
+                    <button id="convert-btn" onclick="convertVideo()">
+                        <span id="btn-text">Convert to MP3</span>
+                        <div id="loading-spinner" class="spinner" style="display: none;"></div>
+                    </button>
+                </div>
+
+                <div id="result-section" class="result-section" style="display: none;">
+                    <div class="success-message">
+                        <h3 id="video-title"></h3>
+                        <p>✅ Conversion successful!</p>
+                        <a id="download-link" href="#" class="download-btn">Download MP3</a>
+                    </div>
+                </div>
+
+                <div id="error-section" class="error-section" style="display: none;">
+                    <p id="error-message"></p>
+                </div>
+            </div>
+
+            <div class="info-section">
+                <h3>How to use:</h3>
+                <ol>
+                    <li>Copy a YouTube video URL</li>
+                    <li>Paste it in the input field above</li>
+                    <li>Click "Convert to MP3"</li>
+                    <li>Download your MP3 file</li>
+                </ol>
+                
+                <div class="note">
+                    <strong>Note:</strong> This tool is for personal use only. Please respect copyright laws and YouTube's terms of service.
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- GitHub Link Button -->
+    <a href="https://github.com/Nuqb" target="_blank" rel="noopener noreferrer" class="github-btn" title="View on GitHub">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12Z"/>
+        </svg>
+    </a>
+
+    <script>
+        let isConverting = false;
+
+        function showLoading() {
+            document.getElementById('btn-text').style.display = 'none';
+            document.getElementById('loading-spinner').style.display = 'inline-block';
+            document.getElementById('convert-btn').disabled = true;
+            document.getElementById('youtube-url').disabled = true;
+            isConverting = true;
+        }
+
+        function hideLoading() {
+            document.getElementById('btn-text').style.display = 'inline';
+            document.getElementById('loading-spinner').style.display = 'none';
+            document.getElementById('convert-btn').disabled = false;
+            document.getElementById('youtube-url').disabled = false;
+            isConverting = false;
+        }
+
+        function showResult(data) {
+            document.getElementById('video-title').textContent = data.title;
+            document.getElementById('download-link').href = data.download_url;
+            document.getElementById('download-link').download = data.title + '.mp3';
+            document.getElementById('result-section').style.display = 'block';
+            document.getElementById('error-section').style.display = 'none';
+        }
+
+        function showError(message) {
+            document.getElementById('error-message').textContent = message;
+            document.getElementById('error-section').style.display = 'block';
+            document.getElementById('result-section').style.display = 'none';
+        }
+
+        function hideResults() {
+            document.getElementById('result-section').style.display = 'none';
+            document.getElementById('error-section').style.display = 'none';
+        }
+
+        async function convertVideo() {
+            if (isConverting) return;
+
+            const url = document.getElementById('youtube-url').value.trim();
+            
+            if (!url) {
+                showError('Please enter a YouTube URL');
+                return;
+            }
+
+            hideResults();
+            showLoading();
+
+            try {
+                const response = await fetch('/convert', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showResult(data);
+                } else {
+                    showError(data.error || 'An error occurred during conversion');
+                }
+            } catch (error) {
+                showError('Network error. Please check your connection and try again.');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Allow Enter key to trigger conversion
+        document.getElementById('youtube-url').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !isConverting) {
+                convertVideo();
+            }
+        });
+
+        // Clear results when URL changes
+        document.getElementById('youtube-url').addEventListener('input', function() {
+            hideResults();
+        });
+    </script>
+</body>
+</html> 

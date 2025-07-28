@@ -1,0 +1,377 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Better touch handling for mobile */
+button, input, a {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+/* Smooth scrolling */
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 50%, #404040 100%);
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 40px;
+    color: white;
+}
+
+header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+header p {
+    font-size: 1.1rem;
+    opacity: 0.9;
+}
+
+.converter-box {
+    background: white;
+    border-radius: 15px;
+    padding: 30px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    margin-bottom: 30px;
+}
+
+.input-section {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+#youtube-url {
+    flex: 1;
+    min-width: 300px;
+    padding: 15px 20px;
+    border: 2px solid #e1e5e9;
+    border-radius: 10px;
+    font-size: 16px;
+    transition: border-color 0.3s ease;
+}
+
+#youtube-url:focus {
+    outline: none;
+    border-color: #ff6b9d;
+}
+
+#convert-btn {
+    padding: 15px 30px;
+    background: linear-gradient(135deg, #ff6b9d 0%, #c44569 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    min-width: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+#convert-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(255, 107, 157, 0.4);
+}
+
+#convert-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.result-section {
+    background: #fef7f7;
+    border: 2px solid #ff8fab;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+}
+
+.success-message h3 {
+    color: #c44569;
+    margin-bottom: 10px;
+    font-size: 1.2rem;
+}
+
+.success-message p {
+    color: #a4133c;
+    margin-bottom: 15px;
+}
+
+.download-btn {
+    display: inline-block;
+    background: #ff6b9d;
+    color: white;
+    padding: 12px 25px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: background-color 0.3s ease;
+}
+
+.download-btn:hover {
+    background: #c44569;
+}
+
+.error-section {
+    background: #fdf2f8;
+    border: 2px solid #ec4899;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+}
+
+.error-section p {
+    color: #be185d;
+    font-weight: 500;
+}
+
+.info-section {
+    background: rgba(255,255,255,0.95);
+    border-radius: 15px;
+    padding: 25px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+.info-section h3 {
+    color: #374151;
+    margin-bottom: 15px;
+    font-size: 1.3rem;
+}
+
+.info-section ol {
+    margin-left: 20px;
+    margin-bottom: 20px;
+}
+
+.info-section li {
+    margin-bottom: 8px;
+    color: #4b5563;
+    line-height: 1.5;
+}
+
+.note {
+    background: #fce7f3;
+    border: 1px solid #f472b6;
+    border-radius: 8px;
+    padding: 15px;
+    color: #be185d;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+/* GitHub Button */
+.github-btn {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+}
+
+.github-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    color: white;
+}
+
+.github-btn svg {
+    transition: transform 0.3s ease;
+}
+
+.github-btn:hover svg {
+    transform: scale(1.1);
+}
+
+@media (max-width: 768px) {
+    body {
+        padding: 15px;
+    }
+    
+    .container {
+        max-width: 100%;
+    }
+    
+    header {
+        margin-bottom: 30px;
+    }
+    
+    header h1 {
+        font-size: 2.2rem;
+        margin-bottom: 8px;
+    }
+    
+    header p {
+        font-size: 1rem;
+    }
+    
+    .converter-box {
+        padding: 25px 20px;
+        margin-bottom: 20px;
+    }
+    
+    .input-section {
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+    
+    #youtube-url {
+        min-width: auto;
+        width: 100%;
+        padding: 16px 18px;
+        font-size: 16px; /* Prevents zoom on iOS */
+        border-radius: 12px;
+    }
+    
+    #convert-btn {
+        width: 100%;
+        padding: 16px 30px;
+        font-size: 16px;
+        border-radius: 12px;
+        min-height: 52px; /* Better touch target */
+    }
+    
+    .result-section, .error-section {
+        padding: 18px;
+        border-radius: 12px;
+    }
+    
+    .success-message h3 {
+        font-size: 1.1rem;
+        margin-bottom: 8px;
+    }
+    
+    .download-btn {
+        padding: 14px 28px;
+        font-size: 16px;
+        border-radius: 10px;
+        min-height: 48px; /* Better touch target */
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .info-section {
+        padding: 20px;
+        border-radius: 12px;
+    }
+    
+    .info-section h3 {
+        font-size: 1.2rem;
+        margin-bottom: 12px;
+    }
+    
+    .info-section ol {
+        margin-left: 18px;
+    }
+    
+    .info-section li {
+        margin-bottom: 10px;
+        line-height: 1.6;
+    }
+    
+    .note {
+        padding: 16px;
+        border-radius: 10px;
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+    
+    .github-btn {
+        width: 48px;
+        height: 48px;
+        bottom: 20px;
+        left: 20px;
+        /* Ensure it doesn't interfere with content */
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 10px;
+    }
+    
+    header h1 {
+        font-size: 1.8rem;
+    }
+    
+    header p {
+        font-size: 0.95rem;
+    }
+    
+    .converter-box {
+        padding: 20px 15px;
+    }
+    
+    #youtube-url {
+        padding: 14px 16px;
+    }
+    
+    #convert-btn {
+        padding: 14px 25px;
+        min-height: 50px;
+    }
+    
+    .info-section {
+        padding: 18px 15px;
+    }
+    
+    .github-btn {
+        width: 44px;
+        height: 44px;
+        bottom: 15px;
+        left: 15px;
+    }
+} 
