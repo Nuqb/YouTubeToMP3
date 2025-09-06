@@ -1,3 +1,6 @@
 Flask==2.3.3
 yt-dlp>=2025.7.21
-Werkzeug==2.3.7 
+Werkzeug==2.3.7
+mutagen==1.47.0
+requests==2.31.0
+beautifulsoup4==4.12.2 

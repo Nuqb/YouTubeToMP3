@@ -5,21 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>YouTube to MP3 Converter</title>
+    <title>YouTube, YouTube Music, SoundCloud & Spotify to MP3 Converter</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="{{ url_for('static', filename='script.js') }}" defer></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1> YouTube to MP3 Converter</h1>
+            <h1> YouTube, YouTube Music, SoundCloud & Spotify to MP3 Converter</h1>
             <p>As simple as it gets</p>
         </header>
 
         <main>
             <div class="converter-box">
                 <div class="input-section">
-                    <input type="url" id="youtube-url" placeholder="Paste YouTube URL here..." required>
+                    <input type="url" id="youtube-url" placeholder="Paste YouTube, YouTube Music, SoundCloud, or Spotify URL here..." required>
                     <button id="convert-btn" onclick="convertVideo()">
                         <span id="btn-text">Convert to MP3</span>
                         <div id="loading-spinner" class="spinner" style="display: none;"></div>
@@ -42,14 +42,14 @@
             <div class="info-section">
                 <h3>How to use:</h3>
                 <ol>
-                    <li>Copy a YouTube video URL</li>
+                    <li>Copy a YouTube video, YouTube Music track, SoundCloud track, or Spotify track URL</li>
                     <li>Paste it in the input field above</li>
                     <li>Click "Convert to MP3"</li>
                     <li>Download your MP3 file</li>
                 </ol>
-                
+
                 <div class="note">
-                    <strong>Note:</strong> This tool is for personal use only. Please respect copyright laws and YouTube's terms of service.
+                    <strong>Note:</strong> This tool is for personal use only. Please respect copyright laws and the terms of service of YouTube, SoundCloud, and Spotify.
                 </div>
             </div>
         </main>
