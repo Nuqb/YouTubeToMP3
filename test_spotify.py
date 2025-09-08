@@ -70,7 +70,17 @@ def extract_spotify_info(spotify_url):
         print(f'Error: {e}')
         return None, None
 
-# Test with the user's URL
+# Test with Spotify URL
 url = 'https://open.spotify.com/intl-fr/track/4S84adgZ72y8M4ebSZkn1S'
 track_name, artist_name = extract_spotify_info(url)
-print(f'\nResult: Track="{track_name}", Artist="{artist_name}"')
+print(f'\nSpotify Result: Track="{track_name}", Artist="{artist_name}"')
+
+# Test with Beatstars URLs
+beatstars_urls = [
+    'https://www.beatstars.com/beat/plus-jamais-21847271',
+    'https://www.beatstars.com/beat/21847271'
+]
+
+for url in beatstars_urls:
+    beat_name, producer_name = extract_beatstars_info(url)
+    print(f'\nBeatstars Result for {url}: Beat="{beat_name}", Producer="{producer_name}"')

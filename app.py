@@ -29,6 +29,167 @@ def cleanup_file(filepath):
     thread.daemon = True
     thread.start()
 
+def extract_beatstars_info(beatstars_url):
+    """Extract beat information from Beatstars URL"""
+    try:
+        # Extract beat ID from URL
+        url_match = re.search(r'/beat(?:/([^/]+)-)?(\d+)', beatstars_url)
+        if not url_match:
+            return None, None
+
+        beat_slug = url_match.group(1)
+        beat_id = url_match.group(2)
+        print(f"Extracted Beatstars beat ID: {beat_id}, slug: {beat_slug}")
+
+        # Try to get beat information from the page
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.beatstars.com/'
+        }
+
+        response = requests.get(beatstars_url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Look for beat title in various places
+            title_tag = soup.find('title')
+            if title_tag and title_tag.string:
+                title_text = title_tag.string.strip()
+                print(f"Found title from Beatstars: {title_text}")
+
+                # Check if this is a generic Beatstars page (not a specific beat)
+                if "Buy Beats Online" in title_text or "Download Beats" in title_text:
+                    print("This appears to be a generic Beatstars page, extracting from URL slug")
+                    # Extract beat name from URL slug
+                    if beat_slug:
+                        beat_name = beat_slug.replace('-', ' ').title()
+                        return beat_name, "Beatstars Producer"
+                    else:
+                        return f"Beatstars Beat {beat_id}", "Beatstars Producer"
+
+                # Clean up title (remove "Beatstars -" prefix, etc.)
+                title_text = re.sub(r'^Beatstars\s*-\s*', '', title_text)
+                title_text = re.sub(r'\s*\|\s*Beatstars.*$', '', title_text)
+
+                # Look for producer/artist name in more places
+                producer_name = None
+
+                # Try to find meta tags
+                meta_tags = soup.find_all('meta')
+                for tag in meta_tags:
+                    if tag.get('property') == 'og:title':
+                        og_title = tag.get('content', '')
+                        print(f"Found OG title: {og_title}")
+                        if '|' in og_title:
+                            parts = og_title.split('|', 1)
+                            beat_title = parts[0].strip()
+                            producer_name = parts[1].strip()
+                            return beat_title, producer_name or "Unknown Producer"
+                        elif ' - ' in og_title:
+                            parts = og_title.split(' - ', 1)
+                            beat_title = parts[0].strip()
+                            producer_name = parts[1].strip()
+                            return beat_title, producer_name or "Unknown Producer"
+                        elif '-' in og_title and len(og_title.split('-')) == 2:
+                            parts = og_title.split('-', 1)
+                            beat_title = parts[0].strip()
+                            producer_name = parts[1].strip()
+                            return beat_title, producer_name or "Unknown Producer"
+
+                # Look for structured data (JSON-LD)
+                json_scripts = soup.find_all('script', type='application/ld+json')
+                for script in json_scripts:
+                    if script.string:
+                        try:
+                            import json
+                            data = json.loads(script.string)
+                            if isinstance(data, dict):
+                                # Look for music recording data
+                                if data.get('@type') == 'MusicRecording':
+                                    beat_title = data.get('name', '')
+                                    producer_name = None
+                                    if 'byArtist' in data:
+                                        producer_name = data['byArtist'].get('name', '')
+                                    if beat_title:
+                                        return beat_title, producer_name or "Beatstars Producer"
+                        except:
+                            continue
+
+                # Look for specific Beatstars page elements
+                # Search for elements containing artist/producer information
+                artist_selectors = [
+                    'span.artist-name',
+                    'div.producer-name',
+                    'h2.producer',
+                    'a[href*="/user/"]',
+                    '.beat-artist',
+                    '.producer-link'
+                ]
+
+                for selector in artist_selectors:
+                    elements = soup.select(selector)
+                    for element in elements:
+                        text = element.get_text().strip()
+                        if text and len(text) > 2 and not text.isdigit():
+                            print(f"Found artist element: {text}")
+                            producer_name = text
+                            break
+                    if producer_name:
+                        break
+
+                # Look for beat title in specific elements
+                title_selectors = [
+                    'h1.beat-title',
+                    'div.beat-name',
+                    '.track-title',
+                    '.beat-header h1'
+                ]
+
+                beat_title = None
+                for selector in title_selectors:
+                    elements = soup.select(selector)
+                    for element in elements:
+                        text = element.get_text().strip()
+                        if text and len(text) > 2:
+                            print(f"Found beat title element: {text}")
+                            beat_title = text
+                            break
+                    if beat_title:
+                        break
+
+                # If we found both title and producer, return them
+                if beat_title and producer_name:
+                    return beat_title, producer_name
+
+                # If we found just the producer, use the cleaned title
+                if producer_name and title_text and not ("Buy Beats" in title_text):
+                    return title_text, producer_name
+
+                # Look for h1 tags that might contain the beat title
+                h1_tags = soup.find_all('h1')
+                for h1 in h1_tags:
+                    if h1.string and len(h1.string.strip()) > 3:
+                        beat_title = h1.string.strip()
+                        print(f"Found H1 title: {beat_title}")
+                        return beat_title, producer_name or "Beatstars Producer"
+
+                # If we found a title but no producer, return just the title
+                if title_text and not ("Buy Beats" in title_text):
+                    return title_text, "Beatstars Producer"
+
+        # Fallback: extract from URL slug
+        if beat_slug:
+            beat_name = beat_slug.replace('-', ' ').title()
+            return beat_name, "Beatstars Producer"
+
+        return f"Beatstars Beat {beat_id}", "Beatstars Producer"
+
+    except Exception as e:
+        print(f"Error extracting Beatstars info: {e}")
+        return None, None
+
 def extract_spotify_info(spotify_url):
     """Extract track information from Spotify URL"""
     try:
@@ -214,6 +375,130 @@ def search_youtube_track(track_name, artist_name):
 
     return None
 
+def search_youtube_beat(beat_name, producer_name):
+    """Search for beat on YouTube and return the best match URL"""
+    if not beat_name:
+        return None
+
+    try:
+        # Beat-specific search queries - prioritize artist name when available
+        search_queries = []
+
+        # If we have a producer name that's not generic, prioritize it
+        if producer_name and producer_name not in ["Beatstars Producer", "Unknown Producer"]:
+            search_queries.extend([
+                f"{beat_name} {producer_name}",  # Exact match like "Plus Jamais Layton"
+                f"{beat_name} by {producer_name}",
+                f"{producer_name} {beat_name} beat",
+                f"{producer_name} {beat_name}"
+            ])
+
+        # General beat searches
+        search_queries.extend([
+            f"{beat_name} beat instrumental",
+            f"{beat_name} type beat",
+            f"{beat_name} prod",
+            f"{beat_name} beat free",
+            f"{beat_name} instrumental beat"
+        ])
+
+        for search_query in search_queries:
+            print(f"Trying beat search: {search_query}")
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': True,
+                'default_search': 'ytsearch8',  # Get top 8 results for beats
+            }
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                try:
+                    search_results = ydl.extract_info(f"ytsearch8:{search_query}", download=False)
+
+                    if search_results and 'entries' in search_results and search_results['entries']:
+                        print(f"Found {len(search_results['entries'])} results for '{search_query}'")
+
+                        # Look for beat/instrumental content (avoid tutorials and vocal tracks)
+                        for entry in search_results['entries']:
+                            title = entry.get('title', '').lower()
+                            description = entry.get('description', '').lower() if entry.get('description') else ''
+
+                            print(f"  Checking: {entry.get('title', '')}")
+
+                            # Skip tutorial videos, vocal tracks, and non-beat content
+                            skip_keywords = ['tutorial', 'how to', 'export', 'fl studio', 'logic pro', 'ableton', 'vocal', 'lyrics', 'singing', 'cover', 'remix']
+                            if any(keyword in title or keyword in description for keyword in skip_keywords):
+                                print(f"    Skipping (contains skip keywords)")
+                                continue
+
+                            # High priority: exact beat name and producer match
+                            if producer_name and producer_name not in ["Beatstars Producer", "Unknown Producer"]:
+                                if (beat_name.lower() in title and
+                                    (producer_name.lower() in title or producer_name.lower() in description)):
+                                    video_id = entry.get('id') or entry.get('url', '').split('/')[-1].split('?')[0]
+                                    print(f"    ✅ Found exact match: {entry.get('title', '')}")
+                                    return f"https://www.youtube.com/watch?v={video_id}"
+
+                            # Prefer beat/instrumental content
+                            prefer_keywords = ['beat', 'instrumental', 'type beat', 'prod', 'producer', 'free beat', 'demo', 'boombap', 'trap beat']
+                            if any(keyword in title or keyword in description for keyword in prefer_keywords):
+                                # Make sure the beat name is in the title
+                                if beat_name.lower() in title:
+                                    video_id = entry.get('id') or entry.get('url', '').split('/')[-1].split('?')[0]
+                                    print(f"    Found preferred beat match: {entry.get('title', '')}")
+                                    return f"https://www.youtube.com/watch?v={video_id}"
+
+                        # If no preferred match found, return the first result that contains the beat name
+                        for entry in search_results['entries']:
+                            title = entry.get('title', '').lower()
+                            description = entry.get('description', '').lower() if entry.get('description') else ''
+
+                            # Skip tutorials
+                            if not any(keyword in title or keyword in description for keyword in ['tutorial', 'how to', 'export', 'fl studio']):
+                                # Check if beat name is in title
+                                if beat_name.lower() in title:
+                                    video_id = entry.get('id') or entry.get('url', '').split('/')[-1].split('?')[0]
+                                    print(f"    Using beat name match: {entry.get('title', '')}")
+                                    return f"https://www.youtube.com/watch?v={video_id}"
+
+                except Exception as e:
+                    print(f"Error with search query '{search_query}': {e}")
+                    continue
+
+    except Exception as e:
+        print(f"Error searching YouTube for beat: {e}")
+
+    return None
+
+def search_youtube_beat_simple(search_query, search_type):
+    """Simple YouTube search for beats - returns first non-tutorial result"""
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,
+            'default_search': 'ytsearch5',
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            search_results = ydl.extract_info(f"ytsearch5:{search_query}", download=False)
+
+            if search_results and 'entries' in search_results and search_results['entries']:
+                # Return the first non-tutorial result
+                for entry in search_results['entries']:
+                    title = entry.get('title', '').lower()
+                    description = entry.get('description', '').lower() if entry.get('description') else ''
+
+                    # Skip tutorials
+                    if not any(keyword in title or keyword in description for keyword in ['tutorial', 'how to', 'export', 'fl studio']):
+                        video_id = entry.get('id') or entry.get('url', '').split('/')[-1].split('?')[0]
+                        return f"https://www.youtube.com/watch?v={video_id}"
+
+    except Exception as e:
+        print(f"Error in simple beat search: {e}")
+
+    return None
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -227,13 +512,14 @@ def convert_video():
         if not url:
             return jsonify({'error': 'Please provide a URL'}), 400
 
-        # Validate URL (YouTube, YouTube Music, SoundCloud, or Spotify)
-        if not (('youtube.com' in url or 'youtu.be' in url or 'music.youtube.com' in url) or ('soundcloud.com' in url) or ('spotify.com' in url or 'open.spotify.com' in url)):
-            return jsonify({'error': 'Please provide a valid YouTube, YouTube Music, SoundCloud, or Spotify URL'}), 400
+        # Validate URL (YouTube, YouTube Music, SoundCloud, Spotify, or Beatstars)
+        if not (('youtube.com' in url or 'youtu.be' in url or 'music.youtube.com' in url) or ('soundcloud.com' in url) or ('spotify.com' in url or 'open.spotify.com' in url) or ('beatstars.com' in url)):
+            return jsonify({'error': 'Please provide a valid YouTube, YouTube Music, SoundCloud, Spotify, or Beatstars URL'}), 400
         
-        # Handle Spotify URLs by finding the track on YouTube
+        # Handle Spotify and Beatstars URLs by finding the track/beat on YouTube
         original_url = url
         is_spotify = 'spotify.com' in url or 'open.spotify.com' in url
+        is_beatstars = 'beatstars.com' in url
 
         if is_spotify:
             # Extract track info from Spotify
@@ -251,6 +537,45 @@ def convert_video():
             # Use the YouTube URL instead
             url = youtube_url
             print(f"Spotify track found: '{track_name}' by {artist_name or 'Unknown Artist'} -> {youtube_url}")
+
+        elif is_beatstars:
+            # Extract beat info from Beatstars
+            beat_name, producer_name = extract_beatstars_info(url)
+
+            if not beat_name:
+                return jsonify({'error': 'Could not extract beat information from Beatstars URL. Please try a different Beatstars link or use the direct YouTube/SoundCloud link instead.'}), 400
+
+            # For Beatstars beats, try some common producer names if we don't have one
+            if producer_name in ["Beatstars Producer", "Unknown Producer"]:
+                # Try searching with common variations of the beat name
+                # This is a workaround since Beatstars pages often don't show producer info
+                common_searches = [
+                    f"{beat_name} layton",  # Common producer name
+                    f"{beat_name} instrumental",
+                    f"{beat_name} beat"
+                ]
+
+                for search_term in common_searches:
+                    print(f"Trying direct search: {search_term}")
+                    temp_youtube_url = search_youtube_beat_simple(search_term, "direct")
+                    if temp_youtube_url:
+                        url = temp_youtube_url
+                        print(f"Found beat with direct search: {search_term} -> {temp_youtube_url}")
+                        break
+                else:
+                    # If direct searches fail, use the normal beat search
+                    youtube_url = search_youtube_beat(beat_name, producer_name)
+                    if not youtube_url:
+                        return jsonify({'error': f'Could not find "{beat_name}" beat on YouTube. Please try searching manually or use a different link.'}), 400
+                    url = youtube_url
+            else:
+                # We have a producer name, use normal search
+                youtube_url = search_youtube_beat(beat_name, producer_name)
+                if not youtube_url:
+                    return jsonify({'error': f'Could not find "{beat_name}" beat on YouTube. Please try searching manually or use a different link.'}), 400
+                url = youtube_url
+
+            print(f"Beatstars beat found: '{beat_name}' by {producer_name or 'Unknown Producer'} -> {url}")
 
         # Create unique filename
         timestamp = str(int(time.time()))
