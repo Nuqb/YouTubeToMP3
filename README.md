@@ -6,8 +6,6 @@
 
 [![Download for Windows](https://img.shields.io/badge/Download_for_Windows_10%2F11-Portable_ZIP-f09cbd?style=for-the-badge)](https://github.com/Nuqb/YouTubeToMP3/releases/latest/download/YouTubeToMP3-Windows-x64.zip)
 
-**No coding. No Python setup. No account.**
-
 Windows 10/11 · 64-bit · Internet connection required
 
 ![The YouTube to MP3 converter](docs/images/converter.png)
