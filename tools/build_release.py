@@ -61,6 +61,7 @@ def main():
     subprocess.run(command, cwd=ROOT, check=True)
     folder = ROOT / 'dist' / 'YouTubeToMP3'
     shutil.copy2(ROOT / 'docs' / 'START-HERE.txt', folder)
+    shutil.copy2(ROOT / 'LICENSE', folder)
     shutil.copy2(ROOT / 'docs' / 'THIRD-PARTY-NOTICES.md', folder)
     licenses = folder / 'licenses'
     licenses.mkdir(exist_ok=True)

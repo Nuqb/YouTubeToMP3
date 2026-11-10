@@ -1,5 +1,9 @@
 # Bundled software
 
+The application's own code and documentation are licensed under the MIT License
+in the root `LICENSE` file. That license does not replace the licenses of the
+third-party software listed below.
+
 The portable release bundles Python, Flask, Waitress, yt-dlp (with its default
 dependencies and EJS scripts), FFmpeg/FFprobe, and Deno. License texts are in
 `licenses/`; exact Python package versions and binary URLs are in `build-info.json`.

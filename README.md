@@ -10,6 +10,8 @@
 
 Windows 10/11 · 64-bit · Internet connection required
 
+[![MIT License](https://img.shields.io/badge/License-MIT-f09cbd)](LICENSE) · [Contributing](CONTRIBUTING.md)
+
 ![The YouTube to MP3 converter](docs/images/converter.png)
 
 </div>
@@ -107,3 +109,17 @@ For a local release, build and test first, commit the intended source, create a 
 `python tools/smoke_release.py` extracts the ZIP into a path containing spaces and launches the frozen executable from a different working directory. It verifies page/assets, invalid-input handling, a real MP3 conversion/download using a local test audio server, and bundled FFmpeg, FFprobe, and Deno. It does not require or guarantee access to third-party platforms.
 
 The root `test_*.py` files are manual network diagnostics for particular Spotify/Beatstars links, not an offline unit test suite. Platform behavior can change; update yt-dlp and publish a fresh executable when necessary. Converted files are temporary and are also removed when the app exits normally.
+
+### Contributing
+
+Bug reports, documentation, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and how to submit a change.
+
+### License
+
+This project's code and documentation are available under the [MIT License](LICENSE).
+You may use, modify, and redistribute them, including commercially, while keeping
+the copyright and license notice. The software comes without warranty.
+
+Bundled third-party tools retain their own licenses, including the GPL v3 FFmpeg
+build. See [third-party notices](docs/THIRD-PARTY-NOTICES.md) and the licenses
+included in the Windows download.

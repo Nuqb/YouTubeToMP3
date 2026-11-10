@@ -21,5 +21,6 @@ tools, automatic browser opening, a free local port, and a visual quick-start RE
 - macOS/Linux users can run from source using the README's developer instructions.
 - `SHA256SUMS.txt` provides a checksum. The **Source code** archives are for developers; use the Windows ZIP to run the app.
 - Third-party license notices and dependency versions are included in the app folder.
+- The application's code and documentation use the MIT License, included as `LICENSE` in the download. See [contribution guidelines](https://github.com/Nuqb/YouTubeToMP3/blob/main/CONTRIBUTING.md) to help improve the project. Bundled dependencies retain their own licenses.
 
 Only download content you own or have permission to download.
