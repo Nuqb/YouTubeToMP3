@@ -1,21 +1,22 @@
-// YouTube to MP3 Converter - Main JavaScript File
+﻿let isConverting = false;
 
-let isConverting = false;
-
-// UI State Management Functions
 function showLoading() {
-    document.getElementById('btn-text').style.display = 'none';
-    document.getElementById('loading-spinner').style.display = 'inline-block';
+    isConverting = true;
+    document.getElementById('btn-text').textContent = 'Converting';
+    document.getElementById('loading-spinner').hidden = false;
     document.getElementById('convert-btn').disabled = true;
     document.getElementById('youtube-url').disabled = true;
-    isConverting = true;
+    document.getElementById('artist-name').disabled = true;
+    document.getElementById('convert-form').setAttribute('aria-busy', 'true');
 }
 
 function hideLoading() {
-    document.getElementById('btn-text').style.display = 'inline';
-    document.getElementById('loading-spinner').style.display = 'none';
+    document.getElementById('btn-text').textContent = 'Convert';
+    document.getElementById('loading-spinner').hidden = true;
     document.getElementById('convert-btn').disabled = false;
     document.getElementById('youtube-url').disabled = false;
+    document.getElementById('artist-name').disabled = false;
+    document.getElementById('convert-form').setAttribute('aria-busy', 'false');
     isConverting = false;
 }
 
@@ -23,29 +24,34 @@ function showResult(data) {
     document.getElementById('video-title').textContent = data.title;
     document.getElementById('download-link').href = data.download_url;
     document.getElementById('download-link').download = data.title + '.mp3';
-    document.getElementById('result-section').style.display = 'block';
-    document.getElementById('error-section').style.display = 'none';
+    document.getElementById('result-section').hidden = false;
+    document.getElementById('error-section').hidden = true;
 }
 
 function showError(message) {
     document.getElementById('error-message').textContent = message;
-    document.getElementById('error-section').style.display = 'block';
-    document.getElementById('result-section').style.display = 'none';
+    document.getElementById('error-section').hidden = false;
+    document.getElementById('result-section').hidden = true;
 }
 
 function hideResults() {
-    document.getElementById('result-section').style.display = 'none';
-    document.getElementById('error-section').style.display = 'none';
+    document.getElementById('result-section').hidden = true;
+    document.getElementById('error-section').hidden = true;
+    document.getElementById('youtube-url').removeAttribute('aria-invalid');
 }
 
-// Main Conversion Function
 async function convertVideo() {
     if (isConverting) return;
 
-    const url = document.getElementById('youtube-url').value.trim();
-    
-    if (!url) {
-        showError('Please enter a YouTube URL');
+    const input = document.getElementById('youtube-url');
+    const url = input.value.trim();
+    const artist = document.getElementById('artist-name').value.trim();
+    input.value = url;
+
+    if (!url || !input.validity.valid) {
+        input.setAttribute('aria-invalid', 'true');
+        showError(url ? 'Enter a valid track or video URL, starting with https://.' : 'Paste a track or video URL to get started.');
+        input.focus();
         return;
     }
 
@@ -55,62 +61,38 @@ async function convertVideo() {
     try {
         const response = await fetch('/convert', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ url: url })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, artist: artist || undefined })
         });
-
         const data = await response.json();
 
         if (response.ok && data.success) {
             showResult(data);
         } else {
-            showError(data.error || 'An error occurred during conversion');
+            showError(data.error || 'Conversion failed. Check the URL and try again.');
         }
     } catch (error) {
-        showError('Network error. Please check your connection and try again.');
+        showError('Connection interrupted. Please try again.');
     } finally {
         hideLoading();
     }
 }
 
-// GitHub Modal Functions
-function openGitHubModal() {
-    document.getElementById('githubModal').style.display = 'flex';
-    document.body.style.overflow = 'hidden'; // Prevent background scrolling
-}
+document.addEventListener('DOMContentLoaded', function () {
+    const artistToggle = document.getElementById('artist-toggle');
+    const artistOptions = document.getElementById('artist-options');
+    artistToggle.addEventListener('click', function () {
+        const expanded = artistToggle.getAttribute('aria-expanded') !== 'true';
+        artistToggle.setAttribute('aria-expanded', String(expanded));
+        artistOptions.inert = !expanded;
+    });
 
-function closeGitHubModal(event) {
-    if (!event || event.target === document.getElementById('githubModal')) {
-        document.getElementById('githubModal').style.display = 'none';
-        document.body.style.overflow = 'auto'; // Restore scrolling
+    document.getElementById('convert-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        convertVideo();
+    });
+
+    for (const id of ['youtube-url', 'artist-name']) {
+        document.getElementById(id).addEventListener('input', hideResults);
     }
-}
-
-// Event Listeners
-document.addEventListener('DOMContentLoaded', function() {
-    // Allow Enter key to trigger conversion
-    document.getElementById('youtube-url').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter' && !isConverting) {
-            convertVideo();
-        }
-    });
-
-    // Clear results when URL changes
-    document.getElementById('youtube-url').addEventListener('input', function() {
-        hideResults();
-    });
-
-    // Close modal with Escape key
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            closeGitHubModal();
-        }
-    });
 });
-
-// Make functions globally accessible for onclick handlers
-window.convertVideo = convertVideo;
-window.openGitHubModal = openGitHubModal;
-window.closeGitHubModal = closeGitHubModal; 
