@@ -1,0 +1,39 @@
+name: Windows release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements-build.txt
+      - run: python tools/build_release.py
+      - run: python tools/smoke_release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-x64
+          path: |
+            dist/YouTubeToMP3-Windows-x64.zip
+            dist/SHA256SUMS.txt
+      - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output 'Release already exists; preserving its uploaded assets.'
+          } else {
+            gh release create $env:RELEASE_TAG dist/YouTubeToMP3-Windows-x64.zip dist/SHA256SUMS.txt --draft --title "YouTube to MP3 $env:RELEASE_TAG" --notes-file docs/RELEASE-NOTES.md
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          exit 0

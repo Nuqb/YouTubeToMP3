@@ -1,6 +1,8 @@
 import os
 import tempfile
 import shutil
+import json
+import html
 from flask import Flask, render_template, request, send_file, jsonify, after_this_request
 import yt_dlp
 import threading
@@ -8,12 +10,14 @@ import time
 import requests
 from bs4 import BeautifulSoup
 import re
+import atexit
 
 app = Flask(__name__)
 
 # Configure upload folder for temporary files
 TEMP_FOLDER = tempfile.mkdtemp()
 app.config['TEMP_FOLDER'] = TEMP_FOLDER
+atexit.register(shutil.rmtree, TEMP_FOLDER, ignore_errors=True)
 
 def cleanup_file(filepath):
     """Delete file after a delay"""
@@ -29,17 +33,218 @@ def cleanup_file(filepath):
     thread.daemon = True
     thread.start()
 
+_SEARCH_STOPWORDS = {
+    "a", "an", "and", "by", "feat", "ft", "for", "free", "instrumental", "official",
+    "of", "on", "prod", "producer", "remix", "type", "video", "audio", "music",
+    "beat", "beats", "x", "w", "with", "the", "to",
+}
+
+def _tokenize_search_text(text):
+    if not text:
+        return set()
+    tokens = re.findall(r"[a-z0-9]+", text.lower())
+    return {t for t in tokens if t and t not in _SEARCH_STOPWORDS and len(t) > 1}
+
+def _infer_beat_title_from_slug(slug):
+    if not slug:
+        return None
+    text = slug.replace("-", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # Common Beatstars SEO slugs: "... type beat <TITLE>"
+    match = re.search(r"\btype\s*beat\b\s+(.*)$", text, flags=re.IGNORECASE)
+    if match:
+        candidate = match.group(1).strip()
+        prefix = text[:match.start()].strip()
+
+        # Pull meaningful "genre" context from the prefix to avoid overly-generic titles like "Class".
+        prefix_tokens = [
+            t for t in re.findall(r"[a-z0-9]+", prefix.lower())
+            if t and t not in _SEARCH_STOPWORDS and t not in {"type", "beat"}
+        ]
+        prefix_phrase = " ".join(prefix_tokens[:6]).strip()
+
+        if candidate:
+            if prefix_phrase:
+                return f"{prefix_phrase} {candidate}".title()
+            return candidate.title()
+
+    # Otherwise take the last 1–3 words (often the actual beat name).
+    words = [w for w in text.split(" ") if w]
+    if not words:
+        return None
+    tail = " ".join(words[-3:]).strip()
+    return tail.title() if tail else None
+
+def _extract_beat_info_from_nuxt(data):
+    """Recursively search Nuxt payloads for beat metadata."""
+    if isinstance(data, dict):
+        beat_data = data.get('beat')
+        if isinstance(beat_data, dict):
+            title = beat_data.get('title') or beat_data.get('name')
+            producer_name = None
+            producer_data = (
+                beat_data.get('producer') or
+                beat_data.get('user') or
+                beat_data.get('creator') or
+                beat_data.get('owner')
+            )
+            if isinstance(producer_data, dict):
+                for key in ('display_name', 'name', 'username', 'title'):
+                    if producer_data.get(key):
+                        producer_name = producer_data.get(key)
+                        break
+            elif isinstance(producer_data, str):
+                producer_name = producer_data
+
+            if title:
+                return title, producer_name or "Beatstars Producer"
+
+        # Some payloads might expose the beat directly
+        possible_title = data.get('title') or data.get('name')
+        if possible_title:
+            producer_name = None
+            for key in ('producer_name', 'producerName', 'producer', 'creator', 'user'):
+                value = data.get(key)
+                if isinstance(value, dict):
+                    for attr in ('display_name', 'name', 'username', 'title'):
+                        if value.get(attr):
+                            producer_name = value.get(attr)
+                            break
+                    if producer_name:
+                        break
+                elif isinstance(value, str) and value.strip():
+                    producer_name = value.strip()
+                    break
+
+            if producer_name:
+                return possible_title, producer_name
+
+        for value in data.values():
+            result = _extract_beat_info_from_nuxt(value)
+            if result:
+                return result
+
+    elif isinstance(data, list):
+        for item in data:
+            result = _extract_beat_info_from_nuxt(item)
+            if result:
+                return result
+
+    return None
+
+
+def _load_nuxt_payload(page_content):
+    """Extract window.__NUXT__ JSON structures from Beatstars player pages."""
+    if not page_content:
+        return None
+
+    # Beatstars player uses Nuxt and exposes data via window.__NUXT__.
+    # Regex alone is brittle here because the JSON can contain nested braces; scan for balanced braces instead.
+    marker_match = re.search(r'window\.__NUXT__\s*=\s*', page_content)
+    if not marker_match:
+        return None
+
+    start = marker_match.end()
+    tail = html.unescape(page_content[start:])
+
+    # Skip whitespace
+    i = 0
+    while i < len(tail) and tail[i].isspace():
+        i += 1
+    if i >= len(tail) or tail[i] not in "{[":
+        return None
+
+    opening = tail[i]
+    closing = "}" if opening == "{" else "]"
+    depth = 0
+    in_string = False
+    escape = False
+    end_index = None
+
+    for j in range(i, len(tail)):
+        ch = tail[j]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+
+        if ch == opening:
+            depth += 1
+        elif ch == closing:
+            depth -= 1
+            if depth == 0:
+                end_index = j + 1
+                break
+
+    if end_index is None:
+        return None
+
+    json_str = tail[i:end_index]
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        return None
+
+
+def fetch_beatstars_embed_metadata(beat_id):
+    """Fetch beat metadata from Beatstars player embed pages."""
+    if not beat_id:
+        return None
+
+    embed_headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://www.beatstars.com/'
+    }
+
+    embed_urls = [
+        f"https://player.beatstars.com/beat/{beat_id}",
+        f"https://player.beatstars.com/?beatId={beat_id}",
+        f"https://player.beatstars.com/?trackId={beat_id}"
+    ]
+
+    for embed_url in embed_urls:
+        try:
+            response = requests.get(embed_url, headers=embed_headers, timeout=15)
+            if response.status_code == 200:
+                nuxt_payload = _load_nuxt_payload(response.text)
+                if nuxt_payload:
+                    result = _extract_beat_info_from_nuxt(nuxt_payload)
+                    if result:
+                        return result
+        except requests.RequestException as err:
+            print(f"Beatstars embed metadata request failed for {embed_url}: {err}")
+            continue
+
+    return None
+
+
 def extract_beatstars_info(beatstars_url):
     """Extract beat information from Beatstars URL"""
     try:
         # Extract beat ID from URL
-        url_match = re.search(r'/beat(?:/([^/]+)-)?(\d+)', beatstars_url)
+        url_match = re.search(r'/beat/(?:([^/]+)-)?(\d+)', beatstars_url)
         if not url_match:
             return None, None
 
         beat_slug = url_match.group(1)
         beat_id = url_match.group(2)
         print(f"Extracted Beatstars beat ID: {beat_id}, slug: {beat_slug}")
+
+        slug_fallback_title = None
+        if beat_slug:
+            # Prefer a smaller "actual title" guess if the slug is SEO-heavy.
+            slug_fallback_title = _infer_beat_title_from_slug(beat_slug) or beat_slug.replace('-', ' ').title()
 
         # Try to get beat information from the page
         headers = {
@@ -51,6 +256,15 @@ def extract_beatstars_info(beatstars_url):
 
         response = requests.get(beatstars_url, headers=headers, timeout=15)
         if response.status_code == 200:
+            raw_content = response.text
+
+            # Beatstars often exposes full metadata via window.__NUXT__ on the main page
+            nuxt_payload = _load_nuxt_payload(raw_content)
+            if nuxt_payload:
+                nuxt_result = _extract_beat_info_from_nuxt(nuxt_payload)
+                if nuxt_result:
+                    return nuxt_result
+
             soup = BeautifulSoup(response.content, 'html.parser')
 
             # Look for beat title in various places
@@ -61,17 +275,14 @@ def extract_beatstars_info(beatstars_url):
 
                 # Check if this is a generic Beatstars page (not a specific beat)
                 if "Buy Beats Online" in title_text or "Download Beats" in title_text:
-                    print("This appears to be a generic Beatstars page, extracting from URL slug")
-                    # Extract beat name from URL slug
-                    if beat_slug:
-                        beat_name = beat_slug.replace('-', ' ').title()
-                        return beat_name, "Beatstars Producer"
-                    else:
-                        return f"Beatstars Beat {beat_id}", "Beatstars Producer"
+                    print("This appears to be a generic Beatstars page; falling back to embed/slug parsing")
+                    # Don't early-return here; the player embed often has the real title/producer.
+                    title_text = None
 
                 # Clean up title (remove "Beatstars -" prefix, etc.)
-                title_text = re.sub(r'^Beatstars\s*-\s*', '', title_text)
-                title_text = re.sub(r'\s*\|\s*Beatstars.*$', '', title_text)
+                if title_text:
+                    title_text = re.sub(r'^Beatstars\s*-\s*', '', title_text)
+                    title_text = re.sub(r'\s*\|\s*Beatstars.*$', '', title_text)
 
                 # Look for producer/artist name in more places
                 producer_name = None
@@ -116,6 +327,42 @@ def extract_beatstars_info(beatstars_url):
                                         return beat_title, producer_name or "Beatstars Producer"
                         except:
                             continue
+
+                # Try to decode inline JSON blobs for beat/producer data
+                script_tags = soup.find_all('script')
+                for script in script_tags:
+                    script_content = script.string or script.text
+                    if not script_content:
+                        continue
+
+                    # Look for window.__NUXT__ assignment inside the script itself
+                    nuxt_match = re.search(r'window\.__NUXT__\s*=\s*(\{.*?\})\s*;', script_content, re.DOTALL)
+                    candidate_json = None
+                    if nuxt_match:
+                        candidate_json = nuxt_match.group(1)
+                    else:
+                        trimmed = script_content.strip()
+                        if trimmed.startswith('{') or trimmed.startswith('['):
+                            candidate_json = trimmed
+
+                    if candidate_json:
+                        try:
+                            data = json.loads(candidate_json)
+                            result = _extract_beat_info_from_nuxt(data)
+                            if result:
+                                return result
+                        except Exception:
+                            # Skip scripts that are not pure JSON
+                            pass
+
+                # Regex fallback when JSON parsing fails but page contains producer hints
+                producer_match = re.search(r'"producer"\s*:\s*\{[^}]*?"display_name"\s*:\s*"([^"]+)"', raw_content)
+                title_match = re.search(r'"title"\s*:\s*"([^"]+)"', raw_content)
+                if title_match:
+                    beat_title = html.unescape(title_match.group(1))
+                    if producer_match:
+                        return beat_title, html.unescape(producer_match.group(1))
+                    return beat_title, producer_name or "Beatstars Producer"
 
                 # Look for specific Beatstars page elements
                 # Search for elements containing artist/producer information
@@ -179,10 +426,14 @@ def extract_beatstars_info(beatstars_url):
                 if title_text and not ("Buy Beats" in title_text):
                     return title_text, "Beatstars Producer"
 
+        # Fallback to Beatstars player embed (works for slugless URLs)
+        embed_metadata = fetch_beatstars_embed_metadata(beat_id)
+        if embed_metadata:
+            return embed_metadata
+
         # Fallback: extract from URL slug
-        if beat_slug:
-            beat_name = beat_slug.replace('-', ' ').title()
-            return beat_name, "Beatstars Producer"
+        if slug_fallback_title:
+            return slug_fallback_title, "Beatstars Producer"
 
         return f"Beatstars Beat {beat_id}", "Beatstars Producer"
 
@@ -381,17 +632,25 @@ def search_youtube_beat(beat_name, producer_name):
         return None
 
     try:
+        beat_tokens = _tokenize_search_text(beat_name)
+        producer_tokens = _tokenize_search_text(producer_name) if producer_name else set()
+        require_producer = bool(producer_tokens) and producer_name not in ["Beatstars Producer", "Unknown Producer"]
+        generic_beat_query = len(beat_tokens) <= 1
+
         # Beat-specific search queries - prioritize artist name when available
         search_queries = []
 
         # If we have a producer name that's not generic, prioritize it
-        if producer_name and producer_name not in ["Beatstars Producer", "Unknown Producer"]:
+        if require_producer:
             search_queries.extend([
+                f"\"{beat_name}\" {producer_name}" if generic_beat_query else None,
                 f"{beat_name} {producer_name}",  # Exact match like "Plus Jamais Layton"
                 f"{beat_name} by {producer_name}",
                 f"{producer_name} {beat_name} beat",
                 f"{producer_name} {beat_name}"
             ])
+
+        search_queries = [q for q in search_queries if q]
 
         # General beat searches
         search_queries.extend([
@@ -401,6 +660,9 @@ def search_youtube_beat(beat_name, producer_name):
             f"{beat_name} beat free",
             f"{beat_name} instrumental beat"
         ])
+
+        best_url = None
+        best_score = 0.0
 
         for search_query in search_queries:
             print(f"Trying beat search: {search_query}")
@@ -431,35 +693,37 @@ def search_youtube_beat(beat_name, producer_name):
                                 print(f"    Skipping (contains skip keywords)")
                                 continue
 
-                            # High priority: exact beat name and producer match
-                            if producer_name and producer_name not in ["Beatstars Producer", "Unknown Producer"]:
-                                if (beat_name.lower() in title and
-                                    (producer_name.lower() in title or producer_name.lower() in description)):
-                                    video_id = entry.get('id') or entry.get('url', '').split('/')[-1].split('?')[0]
-                                    print(f"    ✅ Found exact match: {entry.get('title', '')}")
-                                    return f"https://www.youtube.com/watch?v={video_id}"
+                            uploader = (entry.get('uploader') or entry.get('channel') or entry.get('uploader_id') or '').lower()
+                            combined_text = f"{title} {description} {uploader}"
+                            combined_tokens = _tokenize_search_text(combined_text)
 
-                            # Prefer beat/instrumental content
+                            # Beat match: token overlap (handles different word orders / extra SEO words)
+                            beat_overlap = 0.0
+                            if beat_tokens:
+                                beat_overlap = len(beat_tokens & combined_tokens) / max(1, len(beat_tokens))
+
+                            producer_overlap = 0.0
+                            if producer_tokens:
+                                producer_overlap = len(producer_tokens & combined_tokens) / max(1, len(producer_tokens))
+
+                            # Prefer beat-ish results even when overlap is decent.
                             prefer_keywords = ['beat', 'instrumental', 'type beat', 'prod', 'producer', 'free beat', 'demo', 'boombap', 'trap beat']
-                            if any(keyword in title or keyword in description for keyword in prefer_keywords):
-                                # Make sure the beat name is in the title
-                                if beat_name.lower() in title:
-                                    video_id = entry.get('id') or entry.get('url', '').split('/')[-1].split('?')[0]
-                                    print(f"    Found preferred beat match: {entry.get('title', '')}")
-                                    return f"https://www.youtube.com/watch?v={video_id}"
+                            prefer_bonus = 0.10 if any(k in combined_text for k in prefer_keywords) else 0.0
 
-                        # If no preferred match found, return the first result that contains the beat name
-                        for entry in search_results['entries']:
-                            title = entry.get('title', '').lower()
-                            description = entry.get('description', '').lower() if entry.get('description') else ''
+                            score = beat_overlap + (0.75 * producer_overlap) + prefer_bonus
+                            if require_producer and producer_overlap == 0.0:
+                                # If the beat title is generic (e.g., "Class"), don't accept results that don't mention the producer.
+                                if generic_beat_query:
+                                    continue
+                                score -= 0.35  # penalize results that don't mention the producer at all
 
-                            # Skip tutorials
-                            if not any(keyword in title or keyword in description for keyword in ['tutorial', 'how to', 'export', 'fl studio']):
-                                # Check if beat name is in title
-                                if beat_name.lower() in title:
-                                    video_id = entry.get('id') or entry.get('url', '').split('/')[-1].split('?')[0]
-                                    print(f"    Using beat name match: {entry.get('title', '')}")
-                                    return f"https://www.youtube.com/watch?v={video_id}"
+                            # Keep best candidate across all queries.
+                            if score > best_score:
+                                video_id = entry.get('id') or entry.get('url', '').split('/')[-1].split('?')[0]
+                                if video_id:
+                                    best_score = score
+                                    best_url = f"https://www.youtube.com/watch?v={video_id}"
+                                    print(f"    New best score {best_score:.2f}: {entry.get('title', '')}")
 
                 except Exception as e:
                     print(f"Error with search query '{search_query}': {e}")
@@ -467,6 +731,10 @@ def search_youtube_beat(beat_name, producer_name):
 
     except Exception as e:
         print(f"Error searching YouTube for beat: {e}")
+
+    # Only accept if match looks plausible (avoid returning unrelated beats).
+    if best_url and best_score >= (0.55 if require_producer else 0.40):
+        return best_url
 
     return None
 
@@ -520,6 +788,7 @@ def convert_video():
         original_url = url
         is_spotify = 'spotify.com' in url or 'open.spotify.com' in url
         is_beatstars = 'beatstars.com' in url
+        artist_override = (data.get('artist') or data.get('artistName') or data.get('producer') or '').strip() or None
 
         if is_spotify:
             # Extract track info from Spotify
@@ -542,6 +811,10 @@ def convert_video():
             # Extract beat info from Beatstars
             beat_name, producer_name = extract_beatstars_info(url)
 
+            # Allow user-provided artist/producer to override detection for accuracy
+            if artist_override:
+                producer_name = artist_override
+
             if not beat_name:
                 return jsonify({'error': 'Could not extract beat information from Beatstars URL. Please try a different Beatstars link or use the direct YouTube/SoundCloud link instead.'}), 400
 
@@ -550,8 +823,8 @@ def convert_video():
                 # Try searching with common variations of the beat name
                 # This is a workaround since Beatstars pages often don't show producer info
                 common_searches = [
-                    f"{beat_name} layton",  # Common producer name
-                    f"{beat_name} instrumental",
+                    f"\"{beat_name}\"",
+                    f"{beat_name} type beat",
                     f"{beat_name} beat"
                 ]
 
@@ -589,7 +862,8 @@ def convert_video():
         is_youtube_music = 'music.youtube.com' in url
 
         base_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio/best',
+            # Use a broadly compatible audio selector; we also try additional fallbacks below.
+            'format': 'bestaudio/best',
             'outtmpl': output_path,
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
@@ -602,25 +876,14 @@ def convert_video():
             'cookiefile': None,
             'nocheckcertificate': True,
             'ignoreerrors': False,
+            'retries': 3,
+            'fragment_retries': 3,
+            'noplaylist': True,
+            'geo_bypass': True,
         }
 
-        # Platform-specific optimizations
-        if is_youtube_music:
-            # YouTube Music - use YouTube settings but with Music domain
-            platform_opts = {
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'referer': 'https://music.youtube.com/',
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-us,en;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate',
-                    'DNT': '1',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                },
-            }
-        elif is_soundcloud:
+        # Let the bundled yt-dlp choose current YouTube clients.
+        if is_soundcloud:
             # SoundCloud-specific settings to get full tracks
             platform_opts = {
                 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -658,21 +921,9 @@ def convert_video():
             except:
                 pass
         else:
-            # YouTube-specific settings
-            platform_opts = {
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'referer': 'https://www.youtube.com/',
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-us,en;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate',
-                    'DNT': '1',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                },
-            }
+            platform_opts = {}
 
+        platform_attempts = [platform_opts]
         ydl_opts = {**base_opts, **platform_opts}
 
         # Check for SoundCloud Go+ content
@@ -695,59 +946,61 @@ def convert_video():
 
         # Try different format combinations
         format_options = [
-            'bestaudio[ext=m4a]/bestaudio[ext=mp4]/bestaudio/best',
-            'bestaudio/best[height<=480]/best[height<=480]',  # Lower quality fallback
+            'bestaudio/best',
+            'bestaudio[acodec!=none]/best[acodec!=none]',
+            'worstaudio/worst',
             'best'  # Ultimate fallback
         ]
 
         for format_option in format_options:
-            try:
-                ydl_opts['format'] = format_option
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    # Get video info first
-                    info = ydl.extract_info(url, download=False)
-                    video_title = info.get('title', 'Unknown')
+            for attempt_opts in platform_attempts:
+                try:
+                    ydl_opts = {**base_opts, **attempt_opts}
+                    ydl_opts['format'] = format_option
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        # Get video info first
+                        info = ydl.extract_info(url, download=False)
+                        video_title = info.get('title', 'Unknown')
 
-                    # Download and convert
-                    ydl.download([url])
+                        # Download and convert
+                        ydl.download([url])
 
-                    # Check if output file was created
-                    if os.path.exists(mp3_path):
-                        # Check if it's a 30-second Go+ preview
-                        try:
-                            import mutagen
-                            from mutagen.mp3 import MP3
-                            audio = MP3(mp3_path)
-                            duration = audio.info.length
-                            if duration <= 35 and is_go_plus:  # Allow some tolerance
-                                return jsonify({'error': 'This appears to be a SoundCloud Go+ track. Full tracks are only available to SoundCloud Go+ subscribers. Try accessing the track through the official SoundCloud website or app with a Go+ subscription, or look for a free version of this track.'}), 500
-                        except ImportError:
-                            # mutagen not available, skip duration check
-                            pass
-                        except Exception:
-                            # Other errors, continue anyway
-                            pass
+                        # Check if output file was created
+                        if os.path.exists(mp3_path):
+                            # Check if it's a 30-second Go+ preview
+                            try:
+                                import mutagen
+                                from mutagen.mp3 import MP3
+                                audio = MP3(mp3_path)
+                                duration = audio.info.length
+                                if duration <= 35 and is_go_plus:  # Allow some tolerance
+                                    return jsonify({'error': 'This appears to be a SoundCloud Go+ track. Full tracks are only available to SoundCloud Go+ subscribers. Try accessing the track through the official SoundCloud website or app with a Go+ subscription, or look for a free version of this track.'}), 500
+                            except ImportError:
+                                # mutagen not available, skip duration check
+                                pass
+                            except Exception:
+                                # Other errors, continue anyway
+                                pass
 
-                        download_successful = True
+                            download_successful = True
+                            break
+
+                    if download_successful:
                         break
-                    else:
-                        # Try to find any audio file that might have been created
-                        temp_dir = app.config['TEMP_FOLDER']
-                        for file in os.listdir(temp_dir):
-                            if file.startswith(f"audio_{timestamp}") and file.endswith(('.mp3', '.m4a', '.webm')):
-                                # Rename to mp3 if needed
-                                old_path = os.path.join(temp_dir, file)
-                                if not file.endswith('.mp3'):
-                                    os.rename(old_path, mp3_path)
-                                download_successful = True
-                                break
 
-            except Exception as e:
-                error_msg = str(e)
-                if 'Requested format is not available' in error_msg:
-                    continue  # Try next format option
-                else:
-                    raise e  # Re-raise non-format related errors
+                except Exception as e:
+                    error_msg = str(e)
+                    # Try next combination on known transient/selection errors.
+                    if (
+                        'Requested format is not available' in error_msg or
+                        'HTTP Error 403' in error_msg or
+                        'Forbidden' in error_msg
+                    ):
+                        continue
+                    raise
+
+            if download_successful:
+                break
 
         if not download_successful:
             return jsonify({'error': 'Unable to find a compatible audio format for this content. The content might be restricted or unavailable.'}), 500
@@ -821,4 +1074,4 @@ if __name__ == '__main__':
         shutil.rmtree(TEMP_FOLDER)
     os.makedirs(TEMP_FOLDER, exist_ok=True)
     
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    app.run(debug=False, host='127.0.0.1', port=5000)

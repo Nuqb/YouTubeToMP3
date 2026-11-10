@@ -1,0 +1,28 @@
+YOUTUBE TO MP3 - WINDOWS
+
+1. Right-click the downloaded ZIP and choose Extract All.
+2. Open the extracted YouTubeToMP3 folder.
+3. Double-click YouTubeToMP3.exe. The converter opens in your browser.
+
+Paste a video or track link, click Convert, then Download .mp3.
+Save your MP3 promptly: temporary converted files expire after 30 seconds.
+Your browser saves the MP3 in its usual download location.
+
+Keep the launcher window open while converting. Close it to stop the app.
+The Open converter button reopens the browser if you close the tab.
+
+No Python, Git, FFmpeg installation, or administrator access is required.
+Keep the entire extracted folder together, including _internal.
+Requires Windows 10/11, 64-bit, a browser, and an internet connection.
+
+This release is unsigned. Windows may show an unknown-publisher warning.
+Only run a download you trust from https://github.com/Nuqb/YouTubeToMP3/releases
+Do not disable antivirus protection.
+
+If something fails, download the newest release and try a public link.
+Private, subscription-only, or restricted content may be unavailable.
+Spotify and Beatstars links search YouTube for a matching track.
+Startup logs: %LOCALAPPDATA%\YouTubeToMP3\app.log
+Help: https://github.com/Nuqb/YouTubeToMP3/issues
+
+Only download content you own or have permission to download.
