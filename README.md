@@ -10,8 +10,6 @@
 
 Windows 10/11 · 64-bit · Internet connection required
 
-[![MIT License](https://img.shields.io/badge/License-MIT-f09cbd)](LICENSE) · [Contributing](CONTRIBUTING.md)
-
 ![The YouTube to MP3 converter](docs/images/converter.png)
 
 </div>
